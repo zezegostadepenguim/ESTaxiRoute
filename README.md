@@ -71,6 +71,16 @@ Observações:
 - Para o desenho aparecer na tela do vSMR, em **Plug-ins… → Allowed to draw
   on types** libere o `ESTaxiRoute` também no tipo de display do vSMR.
 
+**Não apareceu no tag do vSMR?**
+- Se nem `NoGate` aparece, o `uk_stand` não está na definição do tag que está
+  sendo usado. Confira se editou o `vSMR_Profiles.json` que o vSMR carrega (na
+  pasta da `vSMR.dll`), no **perfil ativo** e no tipo de tag certo
+  (`departure`, `arrival`...), e recarregue o perfil.
+- Se aparece `NoGate`, a anotação está vazia: só controladores que estão
+  trackeando o tráfego (ou com ele sem controle) conseguem gravar a anotação. O
+  plugin avisa quando o EuroScope recusa.
+- Ao ligar `.taxi vsmr on`, as rotas já existentes são gravadas na anotação.
+
 ## Uso
 
 Clique no item → abre uma caixa de texto → digite a rota → Enter. Deixar

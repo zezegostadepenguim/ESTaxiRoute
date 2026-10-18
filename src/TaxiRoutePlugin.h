@@ -10,7 +10,7 @@
 #include "TaxiCore.h"
 
 #define PLUGIN_NAME "ESTaxiRoute"
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.1.0"
 #define PLUGIN_AUTHOR "ESTaxiRoute contributors"
 #define PLUGIN_COPYRIGHT "MIT License"
 
@@ -76,6 +76,9 @@ private:
     void LoadRunways();
     void Message(const std::string& msg);
     bool FinishRecording();
+    // Writes the route to the strip annotation (when enabled); false if EuroScope refused.
+    bool WriteAnnotation(EuroScopePlugIn::CFlightPlan fp, const std::string& route);
+    void SyncAnnotations();
     void ToggleStopBar(EuroScopePlugIn::CFlightPlan fp, bool release, bool lock);
     std::string ConfigPath() const;
 

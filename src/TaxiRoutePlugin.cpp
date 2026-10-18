@@ -193,6 +193,37 @@ std::string CTaxiRoutePlugin::GetRoute(CFlightPlan fp) {
     return GetRoute(cs);
 }
 
+bool CTaxiRoutePlugin::WriteAnnotation(CFlightPlan fp, const std::string& route) {
+    if (annotationIndex_ < 0) return true;
+    CFlightPlanControllerAssignedData data = fp.GetControllerAssignedData();
+    const char* cur = data.GetFlightStripAnnotation(annotationIndex_);
+    // Never overwrite an annotation that isn't ours. In raw (vSMR) mode the
+    // annotation is dedicated to the route.
+    bool ours = annotationRaw_ || !cur || !*cur || std::string(cur).compare(0, 3, kAnnotationPrefix) == 0;
+    if (!ours) return true;
+    std::string value = route.empty() || annotationRaw_ ? route : kAnnotationPrefix + route;
+    if (cur && value == cur) return true;
+    return data.SetFlightStripAnnotation(annotationIndex_, value.c_str());
+}
+
+void CTaxiRoutePlugin::SyncAnnotations() {
+    // Routes set before the annotation was turned on are only stored locally.
+    int written = 0, failed = 0;
+    std::map<std::string, std::string> routes = routes_;
+    for (const auto& r : routes) {
+        CFlightPlan fp = FlightPlanSelect(r.first.c_str());
+        if (!fp.IsValid()) continue;
+        if (WriteAnnotation(fp, r.second))
+            ++written;
+        else
+            ++failed;
+    }
+    if (written || failed)
+        Message(std::to_string(written) + " rota(s) gravada(s) na anotacao" +
+                (failed ? ", " + std::to_string(failed) + " recusada(s) (trafego trackeado por outro controlador?)"
+                        : std::string()));
+}
+
 void CTaxiRoutePlugin::SetRoute(CFlightPlan fp, const std::string& route) {
     if (!fp.IsValid()) return;
     std::string cs = fp.GetCallsign();
@@ -202,17 +233,9 @@ void CTaxiRoutePlugin::SetRoute(CFlightPlan fp, const std::string& route) {
     else
         routes_[cs] = norm;
 
-    if (annotationIndex_ >= 0) {
-        CFlightPlanControllerAssignedData data = fp.GetControllerAssignedData();
-        const char* cur = data.GetFlightStripAnnotation(annotationIndex_);
-        // Never overwrite an annotation that isn't ours. In raw (vSMR) mode the
-        // annotation is dedicated to the route.
-        bool ours = annotationRaw_ || !cur || !*cur || std::string(cur).compare(0, 3, kAnnotationPrefix) == 0;
-        if (ours) {
-            std::string value = norm.empty() || annotationRaw_ ? norm : kAnnotationPrefix + norm;
-            data.SetFlightStripAnnotation(annotationIndex_, value.c_str());
-        }
-    }
+    if (!WriteAnnotation(fp, norm))
+        Message(cs + ": o EuroScope nao aceitou gravar a rota na anotacao " + std::to_string(annotationIndex_) +
+                " (voce precisa estar trackeando o trafego ou ele estar sem controle). A rota ficou so local.");
 
     if (!norm.empty()) {
         const taxi::Airport* apt = nullptr;
@@ -365,6 +388,7 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
         annotationIndex_ = off ? -1 : i;
         annotationRaw_ = false;
         SaveSettings();
+        SyncAnnotations();
         Message(off ? "compartilhamento por anotacao desligado"
                     : "rotas compartilhadas na anotacao " + std::to_string(i));
     } else if (cmd == "COLOR" && args.size() > 4) {
@@ -377,6 +401,7 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
         SaveSettings();
         Message(on ? "rotas gravadas na anotacao 3: use o item uk_stand no tag do vSMR"
                    : "integracao com o vSMR desligada");
+        if (on) SyncAnnotations();
     } else if (cmd == "AUTORWY" && args.size() > 2) {
         autoRunway_ = Upper(args[2]) != "OFF";
         SaveSettings();
