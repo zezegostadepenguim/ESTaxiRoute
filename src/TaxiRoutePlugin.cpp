@@ -38,8 +38,10 @@ const char* kHelp[] = {
     ".taxi reload              - recarrega ESTaxiRoute.txt",
     ".taxi annot <0-8>|off     - compartilha a rota numa anotacao da strip",
     ".taxi color <R> <G> <B>   - cor do desenho",
+    ".taxi bars on|off         - rotas param nas barras de parada (STOPBAR) nao liberadas",
     ".taxi rec <ICAO> <TWY>    - grava uma taxiway clicando no radar (.taxi save / undo / cancel)",
     ".taxi recpt <ICAO> <NOME> - grava um ponto (holding point, stand) com um clique",
+    ".taxi recbar <ICAO> <NOME> - grava uma barra de parada com dois cliques (um de cada lado)",
 };
 
 }  // namespace
@@ -81,6 +83,7 @@ void CTaxiRoutePlugin::LoadSettings() {
         int r, g, b;
         if (std::sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) color_ = RGB(r, g, b);
     }
+    if (const char* v = GetDataFromSettings("bars")) stopBars_ = Upper(v) != "OFF";
     if (const char* v = GetDataFromSettings("clearspeed")) {
         double s = std::atof(v);
         if (s > 0) clearSpeed_ = s;
@@ -95,6 +98,7 @@ void CTaxiRoutePlugin::SaveSettings() {
     char color[32];
     std::snprintf(color, sizeof(color), "%d,%d,%d", GetRValue(color_), GetGValue(color_), GetBValue(color_));
     SaveDataToSettings("color", "ESTaxiRoute: cor", color);
+    SaveDataToSettings("bars", "ESTaxiRoute: barras de parada", stopBars_ ? "ON" : "OFF");
 }
 
 void CTaxiRoutePlugin::LoadDatabase(bool verbose) {
@@ -116,8 +120,10 @@ void CTaxiRoutePlugin::LoadDatabase(bool verbose) {
         if (verbose) {
             size_t twys = 0;
             for (const auto& a : db_.Airports()) twys += a.second.taxiways.size();
+            size_t bars = 0;
+            for (const auto& a : db_.Airports()) bars += a.second.stopbars.size();
             Message(std::to_string(db_.Airports().size()) + " aeroporto(s), " + std::to_string(twys) +
-                    " taxiway(s) carregadas.");
+                    " taxiway(s), " + std::to_string(bars) + " barra(s) de parada carregadas.");
         }
     }
     runwaysLoaded_ = false;
@@ -304,15 +310,23 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
     } else if (cmd == "COLOR" && args.size() > 4) {
         color_ = RGB(std::atoi(args[2].c_str()), std::atoi(args[3].c_str()), std::atoi(args[4].c_str()));
         SaveSettings();
-    } else if ((cmd == "REC" || cmd == "RECPT") && args.size() > 3) {
+    } else if (cmd == "BARS" && args.size() > 2) {
+        stopBars_ = Upper(args[2]) != "OFF";
+        SaveSettings();
+        Message(stopBars_ ? "rotas param nas barras de parada" : "barras de parada ignoradas");
+    } else if ((cmd == "REC" || cmd == "RECPT" || cmd == "RECBAR") && args.size() > 3) {
         rec_ = Recording();
         rec_.active = true;
-        rec_.isPoint = cmd == "RECPT";
+        rec_.kind = cmd == "RECPT" ? "POINT" : cmd == "RECBAR" ? "STOPBAR" : "TWY";
         rec_.icao = Upper(args[2]);
         rec_.name = Upper(args[3]);
-        Message(rec_.isPoint ? "clique no radar na posicao do ponto " + rec_.name
-                             : "clique no radar ao longo da linha central da taxiway " + rec_.name +
-                                   ". Use .taxi undo para desfazer, .taxi save para salvar, .taxi cancel para sair.");
+        if (rec_.kind == "POINT")
+            Message("clique no radar na posicao do ponto " + rec_.name);
+        else if (rec_.kind == "STOPBAR")
+            Message("clique dos dois lados da taxiway, atravessando-a, onde fica a barra " + rec_.name);
+        else
+            Message("clique no radar ao longo da linha central da taxiway " + rec_.name +
+                    ". Use .taxi undo para desfazer, .taxi save para salvar, .taxi cancel para sair.");
     } else if (cmd == "UNDO") {
         if (!rec_.points.empty()) rec_.points.pop_back();
     } else if (cmd == "SAVE") {
@@ -338,12 +352,13 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
 void CTaxiRoutePlugin::RecordClick(const taxi::LatLon& pos) {
     if (!rec_.active) return;
     rec_.points.push_back(pos);
-    if (rec_.isPoint) FinishRecording();
+    if ((rec_.kind == "POINT" && rec_.points.size() == 1) || (rec_.kind == "STOPBAR" && rec_.points.size() == 2))
+        FinishRecording();
 }
 
 bool CTaxiRoutePlugin::FinishRecording() {
     if (!rec_.active) return false;
-    size_t needed = rec_.isPoint ? 1 : 2;
+    size_t needed = rec_.kind == "POINT" ? 1 : 2;
     if (rec_.points.size() < needed) {
         Message("pontos insuficientes para salvar " + rec_.name);
         return false;
@@ -353,7 +368,7 @@ bool CTaxiRoutePlugin::FinishRecording() {
         Message("nao foi possivel escrever em " + ConfigPath());
         return false;
     }
-    out << "\nAIRPORT " << rec_.icao << "\n" << (rec_.isPoint ? "POINT " : "TWY ") << rec_.name;
+    out << "\nAIRPORT " << rec_.icao << "\n" << rec_.kind << " " << rec_.name;
     for (const taxi::LatLon& p : rec_.points)
         out << " " << taxi::FormatEsCoord(p.lat, true) << " " << taxi::FormatEsCoord(p.lon, false);
     out << "\n";

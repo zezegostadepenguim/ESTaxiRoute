@@ -52,6 +52,7 @@ Como a rota é interpretada no desenho:
 | Pista (`10L`, `09`, `RWY27L`) no **fim** | termina no lado da cabeceira informada: se a taxiway cruza a pista, para ~70 m antes do eixo no cruzamento mais perto dessa cabeceira; se é paralela (ex.: `A 10L`), vai até o ponto da taxiway mais perto da cabeceira |
 | Pista no **meio** (`A 09 B`) | cruzamento de pista, o desenho continua |
 | Ponto (`POINT` do arquivo, ex.: `H1`, stand) | vai até o ponto |
+| Barra de parada (`STOPBAR` do arquivo, ex.: `SB-G`) | libera o cruzamento dessa barra (veja abaixo) |
 | Qualquer outra coisa (`HS`, `VIA`…) | aparece no tag, ignorado no desenho |
 
 O tag mostra até 15 caracteres (o limite do EuroScope); rotas maiores aparecem
@@ -61,6 +62,19 @@ A rota é apagada automaticamente quando o tráfego desconecta ou passa de
 80 kt (decolou). O desenho só aparece com a aeronave abaixo de 50 kt, a até
 10 NM de um aeroporto cadastrado no arquivo. A rota do tráfego selecionado
 (ASEL) é desenhada mais grossa.
+
+### Barras de parada (stop bars)
+
+Barras cadastradas no arquivo (`STOPBAR`) funcionam como um limite: o desenho
+da rota **para na primeira barra que encontrar** pelo caminho, e a barra
+aparece em **vermelho**. Para autorizar o cruzamento, coloque o nome da barra
+na rota:
+
+- `A G 10L`: se houver a barra `SB-G` em G antes da pista, a rota para nela.
+- `A G SB-G 10L`: barra liberada, a rota segue até a pista.
+
+Uma barra que está embaixo da aeronave (a menos de 5 m) não corta a rota.
+`.taxi bars off` desliga esse limite.
 
 ### Comandos
 
@@ -73,14 +87,16 @@ Digite na linha de comando do EuroScope:
 | `.taxi show all` / `asel` / `off` | desenha todas / só a do ASEL / nenhuma |
 | `.taxi color 255 200 0` | cor do desenho |
 | `.taxi annot 7` / `off` | compartilha a rota com outros controladores (ver abaixo) |
-| `.taxi debug` | mostra as taxiways carregadas (para conferir o arquivo) |
+| `.taxi bars on` / `off` | rotas param / não param nas barras de parada |
+| `.taxi debug` | mostra as taxiways, pontos e barras carregados (para conferir o arquivo) |
 | `.taxi reload` | recarrega `ESTaxiRoute.txt` |
 | `.taxi rec SBGR A` | começa a gravar a taxiway A clicando no radar |
 | `.taxi recpt SBGR H1` | grava um ponto com um clique |
+| `.taxi recbar SBGR SB-G` | grava uma barra de parada com dois cliques (um de cada lado da taxiway) |
 | `.taxi undo` / `save` / `cancel` | desfaz o último clique / salva / cancela a gravação |
 | `.taxi help` | lista os comandos |
 
-`show`, `color` e `annot` ficam salvos nas configurações do EuroScope.
+`show`, `color`, `annot` e `bars` ficam salvos nas configurações do EuroScope.
 
 ### Compartilhar a rota com outros controladores
 
@@ -100,7 +116,11 @@ AIRPORT SBGR
 TWY A  S023.25.40.000 W046.28.30.000 S023.25.40.000 W046.27.30.000
 TWY B  -23.4278 -46.4750  -23.4300 -46.4750
 POINT H1 S023.25.30.000 W046.27.40.000
+STOPBAR SB-G S023.25.45.000 W046.28.31.000 S023.25.45.000 W046.28.29.000
 ```
+
+- `STOPBAR` é uma linha que **atravessa** a taxiway (dois pontos, um de cada
+  lado). Dê nomes que não sejam iguais aos de taxiways, ex.: `SB-G`, `G-10L`.
 
 - Coordenadas no formato do EuroScope ou decimal (latitude, longitude).
 - Uma taxiway pode ter várias linhas `TWY` com o mesmo nome.

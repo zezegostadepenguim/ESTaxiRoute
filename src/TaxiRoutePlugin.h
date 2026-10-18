@@ -28,7 +28,7 @@ enum class ShowMode { Off, Asel, All };
 // Points being clicked on the ASR to create a taxiway/point in the config file.
 struct Recording {
     bool active = false;
-    bool isPoint = false;
+    std::string kind;  // "TWY", "POINT" or "STOPBAR" (config file keyword)
     std::string icao;
     std::string name;
     std::vector<taxi::LatLon> points;
@@ -60,6 +60,7 @@ public:
     taxi::TaxiDatabase& Database();
     ShowMode Show() const { return show_; }
     bool Debug() const { return debug_; }
+    bool StopBars() const { return stopBars_; }
     COLORREF Color() const { return color_; }
     Recording& Rec() { return rec_; }
     void RecordClick(const taxi::LatLon& pos);
@@ -79,6 +80,7 @@ private:
     bool runwaysLoaded_ = false;
     ShowMode show_ = ShowMode::All;
     bool debug_ = false;
+    bool stopBars_ = true;  // routes stop at stop bars they don't name
     int annotationIndex_ = -1;  // flight strip annotation used to share routes, -1 = off
     double clearSpeed_ = 80.0;  // routes are cleared when the aircraft goes faster (takeoff)
     COLORREF color_ = RGB(255, 200, 0);

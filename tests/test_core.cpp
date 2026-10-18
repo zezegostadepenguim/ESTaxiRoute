@@ -30,6 +30,8 @@ POINT HP 0.003 0.009
 TWY D 0.003 0.0  0.0031 0.01
 ; U shape crossing the runway near both ends
 TWY F 0.003 0.001  0.005 0.001  0.005 0.009  0.003 0.009
+; bar across B, south of the runway
+STOPBAR SB-B 0.003 0.0049  0.003 0.0051
 )";
 
 static TaxiDatabase MakeDb() {
@@ -75,7 +77,7 @@ static void TestRouteToRunway() {
     TaxiDatabase db = MakeDb();
     const Airport* apt = db.FindNearest({0, 0.001}, 5);
     CHECK(apt && apt->icao == "TEST");
-    PathResult r = BuildPath(*apt, "A B 27", {0, 0.001}, 90);
+    PathResult r = BuildPath(*apt, "A B 27", {0, 0.001}, 90, false);  // bars: TestStopBars
     CHECK(r.unresolved.empty());
     CHECK(r.points.size() == 3);  // start(on A), junction A/B, hold short on B
     CHECK(Near(r.points[1].lat, 0) && Near(r.points[1].lon, 0.005));
@@ -139,6 +141,30 @@ static void TestRunwayEnd() {
     CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
 }
 
+static void TestStopBars() {
+    TaxiDatabase db = MakeDb();
+    const Airport* apt = db.Find("TEST");
+    CHECK(apt->stopbars.count("SB-B") == 1);
+
+    // Route A B 27 crosses SB-B before the runway hold: stops at the bar.
+    PathResult r = BuildPath(*apt, "A B 27", {0, 0.001}, 90);
+    CHECK(r.stopBar == "SB-B");
+    CHECK(r.stopBarLine.size() == 2);
+    CHECK(Near(r.points.back().lat, 0.003) && Near(r.points.back().lon, 0.005));
+
+    // Naming the bar clears it, and the name is not reported as unknown.
+    r = BuildPath(*apt, "A B SB-B 27", {0, 0.001}, 90);
+    CHECK(r.stopBar.empty() && r.unresolved.empty());
+    CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
+
+    // Disabled, or aircraft sitting on the bar: not cut.
+    r = BuildPath(*apt, "A B 27", {0, 0.001}, 90, false);
+    CHECK(r.stopBar.empty());
+    r = BuildPath(*apt, "B 27", {0.003, 0.005}, 0);
+    CHECK(r.stopBar.empty());
+    CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
+}
+
 int main() {
     TestNormalize();
     TestCoords();
@@ -148,6 +174,7 @@ int main() {
     TestRouteToPointAndUnknown();
     TestRunwayCrossing();
     TestRunwayEnd();
+    TestStopBars();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

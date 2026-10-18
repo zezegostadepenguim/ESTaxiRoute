@@ -15,6 +15,7 @@ namespace {
 
 const double kPi = 3.14159265358979323846;
 const double kHoldShortMeters = 70.0;  // stop this far before a runway centerline
+const double kStopBarIgnoreMeters = 5.0;  // a bar this close to the start is under the aircraft
 
 std::string Upper(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -265,7 +266,7 @@ void TaxiDatabase::LoadText(const std::string& text, std::vector<std::string>& e
             current->icao = icao;
             continue;
         }
-        if (kw != "TWY" && kw != "POINT") {
+        if (kw != "TWY" && kw != "POINT" && kw != "STOPBAR") {
             errors.push_back(where + "palavra-chave desconhecida '" + tok[0] + "'");
             continue;
         }
@@ -297,6 +298,12 @@ void TaxiDatabase::LoadText(const std::string& text, std::vector<std::string>& e
                 continue;
             }
             current->points[name] = pts[0];
+        } else if (kw == "STOPBAR") {
+            if (pts.size() < 2) {
+                errors.push_back(where + "STOPBAR precisa de pelo menos duas coordenadas");
+                continue;
+            }
+            current->stopbars[name].push_back(pts);
         } else {
             if (pts.size() < 2) {
                 errors.push_back(where + "TWY precisa de pelo menos duas coordenadas");
@@ -428,14 +435,16 @@ double DistanceNm(const LatLon& a, const LatLon& b) {
 // ---- Path building -----------------------------------------------------------
 
 PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon& start,
-                     double headingDeg) {
+                     double headingDeg, bool respectStopBars) {
     PathResult result;
     LatLon ref = start;
     apt.Reference(ref);
     Projector proj(ref);
 
     std::vector<Element> elems;
-    for (const std::string& tok : Tokenize(route)) {
+    std::vector<std::string> tokens = Tokenize(route);
+    for (const std::string& tok : tokens) {
+        bool isBar = apt.stopbars.count(tok) > 0;  // naming a bar clears it
         auto tw = apt.taxiways.find(tok);
         if (tw != apt.taxiways.end()) {
             Element e{Kind::Taxiway, {}, {}};
@@ -456,7 +465,7 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
             elems.push_back(e);
             continue;
         }
-        result.unresolved.push_back(tok);
+        if (!isBar) result.unresolved.push_back(tok);
     }
 
     std::vector<V> path;
@@ -551,6 +560,41 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
         }
         cur = PointAt(*line, exitS);
         firstTaxiway = false;
+    }
+
+    if (respectStopBars) {
+        // Cut the path at the first stop bar it crosses that the route doesn't clear.
+        Line walked;
+        for (const V& v : path) {
+            walked.cum.push_back(walked.p.empty() ? 0.0 : walked.cum.back() + Len(v - walked.p.back()));
+            walked.p.push_back(v);
+        }
+        const Hit* first = nullptr;
+        std::vector<Hit> hits;
+        std::vector<std::pair<std::string, const std::vector<LatLon>*>> owners;
+        for (const auto& bar : apt.stopbars) {
+            if (std::find(tokens.begin(), tokens.end(), bar.first) != tokens.end()) continue;
+            for (const auto& pts : bar.second) {
+                for (const Hit& h : Crossings(walked, MakeLine(pts, proj))) {
+                    if (h.s < kStopBarIgnoreMeters) continue;
+                    hits.push_back(h);
+                    owners.push_back({bar.first, &pts});
+                }
+            }
+        }
+        size_t firstIdx = 0;
+        for (size_t i = 0; i < hits.size(); ++i)
+            if (!first || hits[i].s < first->s) {
+                first = &hits[i];
+                firstIdx = i;
+            }
+        if (first) {
+            std::vector<V> cut;
+            AppendSub(walked, 0.0, first->s, cut);
+            path = cut;
+            result.stopBar = owners[firstIdx].first;
+            result.stopBarLine = *owners[firstIdx].second;
+        }
     }
 
     // Drop consecutive duplicates.

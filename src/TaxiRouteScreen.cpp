@@ -10,6 +10,7 @@ using namespace EuroScopePlugIn;
 namespace {
 
 const double kMaxDrawSpeed = 50.0;  // don't draw for aircraft faster than this (kt)
+const COLORREF kStopBarColor = RGB(255, 40, 40);
 
 CPosition ToPosition(const taxi::LatLon& ll) {
     CPosition p;
@@ -53,6 +54,7 @@ void CTaxiRouteScreen::DrawRoutes(HDC hDC) {
     taxi::TaxiDatabase& db = plugin_->Database();
     HPEN thin = CreatePen(PS_SOLID, 2, plugin_->Color());
     HPEN thick = CreatePen(PS_SOLID, 3, plugin_->Color());
+    HPEN bar = CreatePen(PS_SOLID, 4, kStopBarColor);
     HGDIOBJ oldPen = SelectObject(hDC, thin);
     SelectObject(hDC, GetStockObject(HOLLOW_BRUSH));
     SetTextColor(hDC, plugin_->Color());
@@ -74,7 +76,8 @@ void CTaxiRouteScreen::DrawRoutes(HDC hDC) {
         const taxi::Airport* apt = db.FindNearest(start, 10);
         if (!apt) continue;
 
-        taxi::PathResult path = taxi::BuildPath(*apt, route, start, pd.GetReportedHeading());
+        taxi::PathResult path =
+            taxi::BuildPath(*apt, route, start, pd.GetReportedHeading(), plugin_->StopBars());
         if (path.points.size() < 2) continue;
 
         std::vector<POINT> px;
@@ -85,11 +88,20 @@ void CTaxiRouteScreen::DrawRoutes(HDC hDC) {
         POINT end = px.back();
         Ellipse(hDC, end.x - 4, end.y - 4, end.x + 5, end.y + 5);
         TextOutA(hDC, end.x + 7, end.y - 7, cs.c_str(), static_cast<int>(cs.size()));
+
+        if (!path.stopBar.empty()) {
+            // Route held at a stop bar: show the bar in red.
+            std::vector<POINT> bp;
+            for (const taxi::LatLon& ll : path.stopBarLine) bp.push_back(ConvertCoordFromPositionToPixel(ToPosition(ll)));
+            SelectObject(hDC, bar);
+            Polyline(hDC, bp.data(), static_cast<int>(bp.size()));
+        }
     }
 
     SelectObject(hDC, oldPen);
     DeleteObject(thin);
     DeleteObject(thick);
+    DeleteObject(bar);
 }
 
 void CTaxiRouteScreen::DrawDatabase(HDC hDC) {
@@ -117,8 +129,24 @@ void CTaxiRouteScreen::DrawDatabase(HDC hDC) {
         }
     }
 
+    HPEN barPen = CreatePen(PS_SOLID, 2, kStopBarColor);
+    SelectObject(hDC, barPen);
+    SetTextColor(hDC, kStopBarColor);
+    for (const auto& a : plugin_->Database().Airports()) {
+        for (const auto& sb : a.second.stopbars) {
+            for (const auto& line : sb.second) {
+                std::vector<POINT> px;
+                for (const taxi::LatLon& ll : line) px.push_back(ConvertCoordFromPositionToPixel(ToPosition(ll)));
+                Polyline(hDC, px.data(), static_cast<int>(px.size()));
+                POINT e = px.back();
+                TextOutA(hDC, e.x + 3, e.y + 3, sb.first.c_str(), static_cast<int>(sb.first.size()));
+            }
+        }
+    }
+
     SelectObject(hDC, oldPen);
     DeleteObject(pen);
+    DeleteObject(barPen);
 }
 
 void CTaxiRouteScreen::DrawRecording(HDC hDC) {
