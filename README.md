@@ -52,7 +52,8 @@ Como a rota é interpretada no desenho:
 | Pista (`10L`, `09`, `RWY27L`) no **fim** | termina no lado da cabeceira informada: se a taxiway cruza a pista, para ~70 m antes do eixo no cruzamento mais perto dessa cabeceira; se é paralela (ex.: `A 10L`), vai até o ponto da taxiway mais perto da cabeceira |
 | Pista no **meio** (`A 09 B`) | cruzamento de pista, o desenho continua |
 | Ponto (`POINT` do arquivo, ex.: `H1`, stand) | vai até o ponto |
-| Barra de parada (`STOPBAR` do arquivo, ex.: `SB-G`) | libera o cruzamento dessa barra (veja abaixo) |
+| Barra de parada (`STOPBAR` do arquivo, ex.: `SB-G`) no **fim** | a rota termina nessa barra |
+| Barra de parada no **meio** | cruzamento dessa barra liberado (veja abaixo) |
 | Qualquer outra coisa (`HS`, `VIA`…) | aparece no tag, ignorado no desenho |
 
 O tag mostra até 15 caracteres (o limite do EuroScope); rotas maiores aparecem
@@ -67,11 +68,13 @@ A rota é apagada automaticamente quando o tráfego desconecta ou passa de
 
 Barras cadastradas no arquivo (`STOPBAR`) funcionam como um limite: o desenho
 da rota **para na primeira barra que encontrar** pelo caminho, e a barra
-aparece em **vermelho**. Para autorizar o cruzamento, coloque o nome da barra
-na rota:
+aparece em **vermelho**.
 
-- `A G 10L`: se houver a barra `SB-G` em G antes da pista, a rota para nela.
-- `A G SB-G 10L`: barra liberada, a rota segue até a pista.
+- `H A G SB-G10L/N`: barra no **fim** = taxiar **até** essa barra. A rota
+  termina nela.
+- `A G 10L`: se houver uma barra em G antes da pista, a rota para nela.
+- `G SB-G10L/N SB-G10L/S C`: barras no **meio** da rota = cruzamento
+  liberado. A rota cruza a pista e segue por C.
 
 Uma barra que está embaixo da aeronave (a menos de 5 m) não corta a rota.
 `.taxi bars off` desliga esse limite.

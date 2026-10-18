@@ -27,7 +27,8 @@ struct Airport {
     std::map<std::string, std::vector<std::vector<LatLon>>> taxiways;
     std::map<std::string, LatLon> points;  // holding points, stands, ...
     // Stop bars: lines across a taxiway. A route stops at the first bar it
-    // meets unless the bar's name is in the route (crossing cleared).
+    // meets. A bar named at the end of the route is where to hold; a bar named
+    // in the middle of the route is a cleared crossing.
     std::map<std::string, std::vector<std::vector<LatLon>>> stopbars;
     std::vector<Runway> runways;
 
@@ -79,7 +80,7 @@ struct PathResult {
 
 // Builds the drawable path for `route` starting from the aircraft position.
 // headingDeg < 0 means unknown. With respectStopBars the path is cut at the
-// first stop bar that the route doesn't name.
+// first stop bar that the route doesn't clear.
 PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon& start,
                      double headingDeg, bool respectStopBars = true);
 

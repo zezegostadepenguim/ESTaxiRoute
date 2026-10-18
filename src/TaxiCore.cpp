@@ -193,12 +193,13 @@ const Hit* NearestAlong(const std::vector<Hit>& hits, double s) {
     return best;
 }
 
-enum class Kind { Taxiway, Point, Runway };
+enum class Kind { Taxiway, Point, Runway, StopBar };
 
 struct Element {
     Kind kind;
-    std::vector<Line> lines;  // taxiway polylines, or the runway centerline
-    V pt;                     // point
+    std::vector<Line> lines;  // taxiway polylines, runway centerline or stop bar
+    V pt;                     // point, or runway threshold
+    std::string name;
 };
 
 }  // namespace
@@ -444,28 +445,48 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
     std::vector<Element> elems;
     std::vector<std::string> tokens = Tokenize(route);
     for (const std::string& tok : tokens) {
-        bool isBar = apt.stopbars.count(tok) > 0;  // naming a bar clears it
         auto tw = apt.taxiways.find(tok);
         if (tw != apt.taxiways.end()) {
-            Element e{Kind::Taxiway, {}, {}};
+            Element e{Kind::Taxiway, {}, {}, tok};
             for (const auto& pts : tw->second) e.lines.push_back(MakeLine(pts, proj));
             elems.push_back(e);
             continue;
         }
         auto pt = apt.points.find(tok);
         if (pt != apt.points.end()) {
-            elems.push_back(Element{Kind::Point, {}, proj.To(pt->second)});
+            elems.push_back(Element{Kind::Point, {}, proj.To(pt->second), tok});
             continue;
         }
         Runway rwy;
         LatLon thr;
         if (apt.HasRunway(tok, &rwy, &thr)) {
-            Element e{Kind::Runway, {}, proj.To(thr)};  // pt = threshold of the named end
+            Element e{Kind::Runway, {}, proj.To(thr), tok};  // pt = threshold of the named end
             e.lines.push_back(MakeLine({rwy.thr1, rwy.thr2}, proj));
             elems.push_back(e);
             continue;
         }
-        if (!isBar) result.unresolved.push_back(tok);
+        auto bar = apt.stopbars.find(tok);
+        if (bar != apt.stopbars.end()) {
+            Element e{Kind::StopBar, {}, {}, tok};
+            for (const auto& pts : bar->second) e.lines.push_back(MakeLine(pts, proj));
+            elems.push_back(e);
+            continue;
+        }
+        result.unresolved.push_back(tok);
+    }
+
+    // A stop bar at the end of the route is where to hold ("A G SB-G");
+    // one followed by more route is a cleared crossing ("G SB-G 10L C").
+    std::vector<std::string> clearedBars;
+    for (size_t i = elems.size(); i-- > 0;) {
+        if (elems[i].kind != Kind::StopBar) continue;
+        bool more = false;
+        for (size_t j = i + 1; j < elems.size(); ++j)
+            if (elems[j].kind != Kind::StopBar) more = true;
+        if (more) {
+            clearedBars.push_back(elems[i].name);
+            elems.erase(elems.begin() + i);
+        }
     }
 
     std::vector<V> path;
@@ -482,7 +503,7 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
             cur = e.pt;
             continue;
         }
-        if (e.kind == Kind::Runway) continue;  // crossing, or handled as the target below
+        if (e.kind == Kind::Runway || e.kind == Kind::StopBar) continue;  // handled as targets below
 
         // Taxiway: use the polyline closest to where we are.
         const Line* line = nullptr;
@@ -517,6 +538,15 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
             }
             if (hits.empty())
                 for (const Line& nl : next->lines) hits.push_back(ClosestApproach(*line, nl));
+            exitS = NearestAlong(hits, entry.s)->s;
+        } else if (next && next->kind == Kind::StopBar) {
+            std::vector<Hit> hits;
+            for (const Line& bl : next->lines) {
+                std::vector<Hit> c = Crossings(*line, bl);
+                hits.insert(hits.end(), c.begin(), c.end());
+            }
+            if (hits.empty())
+                for (const Line& bl : next->lines) hits.push_back(ClosestApproach(*line, bl));
             exitS = NearestAlong(hits, entry.s)->s;
         } else if (next && next->kind == Kind::Point) {
             exitS = ProjectPoint(*line, next->pt).s;
@@ -573,7 +603,7 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
         std::vector<Hit> hits;
         std::vector<std::pair<std::string, const std::vector<LatLon>*>> owners;
         for (const auto& bar : apt.stopbars) {
-            if (std::find(tokens.begin(), tokens.end(), bar.first) != tokens.end()) continue;
+            if (std::find(clearedBars.begin(), clearedBars.end(), bar.first) != clearedBars.end()) continue;
             for (const auto& pts : bar.second) {
                 for (const Hit& h : Crossings(walked, MakeLine(pts, proj))) {
                     if (h.s < kStopBarIgnoreMeters) continue;

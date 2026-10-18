@@ -152,10 +152,19 @@ static void TestStopBars() {
     CHECK(r.stopBarLine.size() == 2);
     CHECK(Near(r.points.back().lat, 0.003) && Near(r.points.back().lon, 0.005));
 
-    // Naming the bar clears it, and the name is not reported as unknown.
+    // Naming the bar in the middle clears it, and the name is not reported as unknown.
     r = BuildPath(*apt, "A B SB-B 27", {0, 0.001}, 90);
     CHECK(r.stopBar.empty() && r.unresolved.empty());
     CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
+
+    // Naming the bar at the end means hold there, even with bars disabled
+    // and when the taxiway would otherwise continue past it.
+    r = BuildPath(*apt, "A B SB-B", {0, 0.001}, 90);
+    CHECK(r.unresolved.empty());
+    CHECK(Near(r.points.back().lat, 0.003) && Near(r.points.back().lon, 0.005));
+    CHECK(r.stopBar == "SB-B");
+    r = BuildPath(*apt, "A B SB-B", {0, 0.001}, 90, false);
+    CHECK(Near(r.points.back().lat, 0.003) && Near(r.points.back().lon, 0.005));
 
     // Disabled, or aircraft sitting on the bar: not cut.
     r = BuildPath(*apt, "A B 27", {0, 0.001}, 90, false);
