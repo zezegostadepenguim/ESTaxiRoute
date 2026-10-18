@@ -154,6 +154,7 @@ Digite na linha de comando do EuroScope:
 | `.taxi recpt SBGR H1` | grava um ponto com um clique |
 | `.taxi recbar SBGR SB-G` | grava uma barra de parada com dois cliques (um de cada lado da taxiway) |
 | `.taxi undo` / `save` / `cancel` | desfaz o último clique / salva / cancela a gravação |
+| `.taxi status` | diagnóstico: versão, arquivo carregado, telas com permissão de desenho e o caminho da rota do ASEL |
 | `.taxi help` | lista os comandos |
 
 `show`, `color`, `annot`, `bars`, `autorwy` e `vsmr` ficam salvos nas configurações do EuroScope.

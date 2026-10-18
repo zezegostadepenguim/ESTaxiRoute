@@ -21,8 +21,16 @@ CPosition ToPosition(const taxi::LatLon& ll) {
 
 }  // namespace
 
+CTaxiRouteScreen::CTaxiRouteScreen(CTaxiRoutePlugin* plugin) : plugin_(plugin) { plugin_->ScreenCreated(); }
+
+void CTaxiRouteScreen::OnAsrContentToBeClosed() {
+    plugin_->ScreenClosed();
+    delete this;
+}
+
 void CTaxiRouteScreen::OnRefresh(HDC hDC, int Phase) {
     if (Phase != REFRESH_PHASE_BEFORE_TAGS) return;
+    plugin_->ScreenRefreshed();
     int saved = SaveDC(hDC);
     SetBkMode(hDC, TRANSPARENT);
     if (plugin_->Debug()) DrawDatabase(hDC);

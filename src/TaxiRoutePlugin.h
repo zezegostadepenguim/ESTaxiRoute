@@ -10,7 +10,7 @@
 #include "TaxiCore.h"
 
 #define PLUGIN_NAME "ESTaxiRoute"
-#define PLUGIN_VERSION "1.1.0"
+#define PLUGIN_VERSION "1.2.0"
 #define PLUGIN_AUTHOR "ESTaxiRoute contributors"
 #define PLUGIN_COPYRIGHT "MIT License"
 
@@ -69,6 +69,11 @@ public:
     Recording& Rec() { return rec_; }
     void RecordClick(const taxi::LatLon& pos);
 
+    // Diagnostics for .taxi status
+    void ScreenCreated() { ++screens_; }
+    void ScreenClosed() { --screens_; }
+    void ScreenRefreshed() { ++refreshes_; }
+
 private:
     void LoadSettings();
     void SaveSettings();
@@ -79,6 +84,7 @@ private:
     // Writes the route to the strip annotation (when enabled); false if EuroScope refused.
     bool WriteAnnotation(EuroScopePlugIn::CFlightPlan fp, const std::string& route);
     void SyncAnnotations();
+    void PrintStatus();
     void ToggleStopBar(EuroScopePlugIn::CFlightPlan fp, bool release, bool lock);
     std::string ConfigPath() const;
 
@@ -95,4 +101,8 @@ private:
     double clearSpeed_ = 80.0;  // routes are cleared when the aircraft goes faster (takeoff)
     COLORREF color_ = RGB(255, 200, 0);
     Recording rec_;
+    bool configFound_ = false;
+    size_t configErrors_ = 0;
+    int screens_ = 0;
+    unsigned long refreshes_ = 0;
 };

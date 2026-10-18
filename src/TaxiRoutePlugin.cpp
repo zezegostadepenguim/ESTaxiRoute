@@ -40,6 +40,7 @@ const char* kHelp[] = {
     ".taxi vsmr on|off         - mostra a rota no item uk_stand do vSMR (anotacao 3)",
     ".taxi autorwy on|off      - completa a rota com a pista do plano de voo",
     ".taxi release / lock      - libera a proxima barra de parada do ASEL / trava todas",
+    ".taxi status              - diagnostico (arquivo, telas, rota do ASEL)",
     ".taxi color <R> <G> <B>   - cor do desenho",
     ".taxi bars on|off         - rotas param nas barras de parada (STOPBAR) nao liberadas",
     ".taxi rec <ICAO> <TWY>    - grava uma taxiway clicando no radar (.taxi save / undo / cancel)",
@@ -112,7 +113,9 @@ void CTaxiRoutePlugin::SaveSettings() {
 void CTaxiRoutePlugin::LoadDatabase(bool verbose) {
     std::vector<std::string> errors;
     std::string path = ConfigPath();
-    if (!db_.LoadFile(path, errors)) {
+    configFound_ = db_.LoadFile(path, errors);
+    configErrors_ = errors.size();
+    if (!configFound_) {
         if (verbose)
             Message("arquivo " + path + " nao encontrado. As rotas funcionam no tag, mas nao serao "
                     "desenhadas na ASR ate voce cadastrar as taxiways (.taxi rec).");
@@ -371,6 +374,8 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
     std::string cmd = args.size() > 1 ? Upper(args[1]) : "HELP";
     if (cmd == "HELP") {
         for (const char* line : kHelp) Message(line);
+    } else if (cmd == "STATUS") {
+        PrintStatus();
     } else if (cmd == "CLEAR") {
         CFlightPlan fp = FlightPlanSelectASEL();
         if (fp.IsValid()) SetRoute(fp, "");
@@ -445,6 +450,74 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
         SetRoute(fp, route);
     }
     return true;
+}
+
+// ---- Diagnostics -------------------------------------------------------------
+
+void CTaxiRoutePlugin::PrintStatus() {
+    Message(std::string("versao ") + PLUGIN_VERSION);
+    Message("arquivo: " + ConfigPath() + (configFound_ ? " (carregado, " : " (NAO ENCONTRADO, ") +
+            std::to_string(configErrors_) + " erro(s))");
+    for (const auto& a : Database().Airports()) {
+        const taxi::Airport& apt = a.second;
+        Message(apt.icao + ": " + std::to_string(apt.taxiways.size()) + " taxiway(s), " +
+                std::to_string(apt.points.size()) + " ponto(s), " + std::to_string(apt.stopbars.size()) +
+                " barra(s), " + std::to_string(apt.runways.size()) + " pista(s) do setor");
+    }
+    const char* show = show_ == ShowMode::Off ? "off" : show_ == ShowMode::Asel ? "asel" : "all";
+    Message(std::string("show ") + show + ", debug " + (debug_ ? "on" : "off") + ", bars " +
+            (stopBars_ ? "on" : "off") + ", autorwy " + (autoRunway_ ? "on" : "off") + ", anotacao " +
+            (annotationIndex_ < 0 ? std::string("off") : std::to_string(annotationIndex_)) +
+            (annotationRaw_ ? " (vsmr)" : ""));
+    Message("telas com permissao de desenho: " + std::to_string(screens_) + ", desenhos feitos: " +
+            std::to_string(refreshes_) +
+            (refreshes_ == 0 ? " -> libere o ESTaxiRoute em Plug-ins > Allowed to draw on types" : ""));
+
+    CFlightPlan fp = FlightPlanSelectASEL();
+    if (!fp.IsValid()) {
+        Message("nenhum trafego selecionado (ASEL) para diagnosticar a rota");
+        return;
+    }
+    std::string cs = fp.GetCallsign();
+    std::string local = GetRoute(cs);
+    Message(cs + ": rota local '" + local + "', rota usada '" + GetRoute(fp) + "'");
+    if (annotationIndex_ >= 0) {
+        const char* a = fp.GetControllerAssignedData().GetFlightStripAnnotation(annotationIndex_);
+        Message(cs + ": anotacao " + std::to_string(annotationIndex_) + " = '" + (a ? a : "") + "'");
+    }
+    CRadarTarget rt = fp.GetCorrelatedRadarTarget();
+    if (!rt.IsValid()) {
+        Message(cs + ": sem alvo de radar correlacionado, nada para desenhar");
+        return;
+    }
+    CPosition pos = rt.GetPosition().GetPosition();
+    taxi::LatLon here{pos.m_Latitude, pos.m_Longitude};
+    const taxi::Airport* nearest = nullptr;
+    double best = 1e9;
+    for (const auto& a : Database().Airports()) {
+        taxi::LatLon ref;
+        if (!a.second.Reference(ref)) continue;
+        double d = taxi::DistanceNm(here, ref);
+        if (d < best) {
+            best = d;
+            nearest = &a.second;
+        }
+    }
+    char gs[64];
+    std::snprintf(gs, sizeof(gs), "%d kt", rt.GetPosition().GetReportedGS());
+    Message(cs + ": GS " + gs + (nearest ? ", " + nearest->icao + " a " + std::to_string(best) + " NM" : ", sem aeroporto"));
+    if (IsHidden(cs)) Message(cs + ": desenho desligado pela funcao Toggle taxi route drawing");
+
+    taxi::PathResult path;
+    if (!ComputePath(rt, fp, path)) {
+        Message(cs + ": sem caminho (sem rota ou mais de 10 NM de um aeroporto do arquivo)");
+        return;
+    }
+    std::string unresolved;
+    for (const std::string& t : path.unresolved) unresolved += " " + t;
+    Message(cs + ": caminho com " + std::to_string(path.points.size()) + " ponto(s)" +
+            (path.stopBar.empty() ? "" : ", parado na barra " + path.stopBar) +
+            (unresolved.empty() ? "" : ", nao encontrado:" + unresolved));
 }
 
 // ---- Recording -------------------------------------------------------------
