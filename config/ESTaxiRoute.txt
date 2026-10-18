@@ -1,0 +1,24 @@
+; ESTaxiRoute - linhas centrais das taxiways
+; Coloque este arquivo na mesma pasta da ESTaxiRoute.dll.
+;
+; Formato (uma taxiway ou ponto por linha, comentarios com ';'):
+;
+;   AIRPORT <ICAO>
+;   TWY   <NOME> <lat> <lon> <lat> <lon> ...   linha central, na ordem dos pontos
+;   POINT <NOME> <lat> <lon>                   holding point, stand, etc.
+;
+; Coordenadas no formato do EuroScope (S023.25.40.000 W046.28.30.000)
+; ou decimal (-23.4278 -46.4750, latitude depois longitude).
+; Uma taxiway pode ter varias linhas TWY com o mesmo nome (trechos separados).
+; As pistas vem automaticamente do setor (.sct), nao precisa cadastrar.
+;
+; O jeito mais facil de preencher e pelo proprio EuroScope:
+;   .taxi rec SBXX A     -> clique ao longo da linha central de A, depois .taxi save
+;   .taxi recpt SBXX H1  -> um clique no ponto
+; As linhas sao adicionadas no fim deste arquivo automaticamente.
+;
+; Exemplo (coordenadas ficticias):
+; AIRPORT SBXX
+; TWY A S023.25.40.000 W046.28.30.000 S023.25.40.000 W046.27.30.000
+; TWY B S023.25.50.000 W046.28.00.000 S023.25.20.000 W046.28.00.000
+; POINT H1 S023.25.30.000 W046.27.40.000
