@@ -71,6 +71,18 @@ std::string FormatEsCoord(double value, bool isLat);
 
 double DistanceNm(const LatLon& a, const LatLon& b);
 
+// Route editing helpers (all return a normalized route).
+// Appends `runway` when the route ends on a taxiway, so "A G" draws to the
+// holding point of the flight plan's runway. Routes that already end at a
+// runway, point or stop bar are left alone.
+std::string WithDefaultRunway(const Airport& apt, const std::string& route, const std::string& runway);
+// Clears the crossing of `bar` by naming it in the middle of the route.
+std::string ReleaseStopBar(const Airport& apt, const std::string& route, const std::string& bar);
+// Removes every cleared crossing (bars named in the middle of the route).
+std::string LockStopBars(const Airport& apt, const std::string& route);
+// True if the route clears any stop bar crossing.
+bool HasReleasedStopBars(const Airport& apt, const std::string& route);
+
 struct PathResult {
     std::vector<LatLon> points;            // polyline to draw
     std::vector<std::string> unresolved;   // tokens not found in the database

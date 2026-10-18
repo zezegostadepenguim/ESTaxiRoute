@@ -433,6 +433,83 @@ double DistanceNm(const LatLon& a, const LatLon& b) {
     return 2 * 3440.065 * std::asin(std::min(1.0, std::sqrt(h)));
 }
 
+// ---- Route editing -------------------------------------------------------------
+
+namespace {
+
+enum class TokenKind { Unknown, Taxiway, Point, Runway, StopBar };
+
+// Same precedence as BuildPath.
+TokenKind Classify(const Airport& apt, const std::string& tok) {
+    if (apt.taxiways.count(tok)) return TokenKind::Taxiway;
+    if (apt.points.count(tok)) return TokenKind::Point;
+    if (apt.HasRunway(tok)) return TokenKind::Runway;
+    if (apt.stopbars.count(tok)) return TokenKind::StopBar;
+    return TokenKind::Unknown;
+}
+
+// A bar is a cleared crossing when a taxiway, point or runway comes after it.
+bool IsClearedBar(const Airport& apt, const std::vector<std::string>& tok, size_t i) {
+    if (Classify(apt, tok[i]) != TokenKind::StopBar) return false;
+    for (size_t j = i + 1; j < tok.size(); ++j) {
+        TokenKind k = Classify(apt, tok[j]);
+        if (k != TokenKind::Unknown && k != TokenKind::StopBar) return true;
+    }
+    return false;
+}
+
+std::string Join(const std::vector<std::string>& tok) {
+    std::string out;
+    for (const std::string& t : tok) out += (out.empty() ? "" : " ") + t;
+    return out;
+}
+
+}  // namespace
+
+std::string WithDefaultRunway(const Airport& apt, const std::string& route, const std::string& runway) {
+    std::vector<std::string> tok = Tokenize(route);
+    std::string rwy = NormalizeRoute(runway);
+    if (rwy.empty() || !apt.HasRunway(rwy)) return Join(tok);
+    for (size_t i = tok.size(); i-- > 0;) {
+        TokenKind k = Classify(apt, tok[i]);
+        if (k == TokenKind::Unknown) continue;
+        if (k == TokenKind::Taxiway) tok.push_back(rwy);
+        break;
+    }
+    return Join(tok);
+}
+
+std::string ReleaseStopBar(const Airport& apt, const std::string& route, const std::string& bar) {
+    std::vector<std::string> tok = Tokenize(route);
+    std::string name = NormalizeRoute(bar);
+    for (size_t i = 0; i < tok.size(); ++i)
+        if (tok[i] == name && IsClearedBar(apt, tok, i)) return Join(tok);
+    // Put it just before the last taxiway/point/runway so something follows it.
+    for (size_t i = tok.size(); i-- > 0;) {
+        TokenKind k = Classify(apt, tok[i]);
+        if (k != TokenKind::Unknown && k != TokenKind::StopBar) {
+            tok.insert(tok.begin() + i, name);
+            break;
+        }
+    }
+    return Join(tok);
+}
+
+std::string LockStopBars(const Airport& apt, const std::string& route) {
+    std::vector<std::string> tok = Tokenize(route);
+    std::vector<std::string> out;
+    for (size_t i = 0; i < tok.size(); ++i)
+        if (!IsClearedBar(apt, tok, i)) out.push_back(tok[i]);
+    return Join(out);
+}
+
+bool HasReleasedStopBars(const Airport& apt, const std::string& route) {
+    std::vector<std::string> tok = Tokenize(route);
+    for (size_t i = 0; i < tok.size(); ++i)
+        if (IsClearedBar(apt, tok, i)) return true;
+    return false;
+}
+
 // ---- Path building -----------------------------------------------------------
 
 PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon& start,

@@ -37,6 +37,9 @@ const char* kHelp[] = {
     ".taxi debug               - mostra/oculta as taxiways carregadas do arquivo",
     ".taxi reload              - recarrega ESTaxiRoute.txt",
     ".taxi annot <0-8>|off     - compartilha a rota numa anotacao da strip",
+    ".taxi vsmr on|off         - mostra a rota no item uk_stand do vSMR (anotacao 3)",
+    ".taxi autorwy on|off      - completa a rota com a pista do plano de voo",
+    ".taxi release / lock      - libera a proxima barra de parada do ASEL / trava todas",
     ".taxi color <R> <G> <B>   - cor do desenho",
     ".taxi bars on|off         - rotas param nas barras de parada (STOPBAR) nao liberadas",
     ".taxi rec <ICAO> <TWY>    - grava uma taxiway clicando no radar (.taxi save / undo / cancel)",
@@ -53,6 +56,7 @@ CTaxiRoutePlugin::CTaxiRoutePlugin()
     RegisterTagItemFunction("Edit taxi route", TAG_FUNC_TAXI_EDIT);
     RegisterTagItemFunction("Clear taxi route", TAG_FUNC_TAXI_CLEAR);
     RegisterTagItemFunction("Toggle taxi route drawing", TAG_FUNC_TAXI_TOGGLE_DRAW);
+    RegisterTagItemFunction("Release/lock stop bar", TAG_FUNC_TAXI_STOPBAR);
 
     LoadSettings();
     LoadDatabase(true);
@@ -84,6 +88,8 @@ void CTaxiRoutePlugin::LoadSettings() {
         if (std::sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) color_ = RGB(r, g, b);
     }
     if (const char* v = GetDataFromSettings("bars")) stopBars_ = Upper(v) != "OFF";
+    if (const char* v = GetDataFromSettings("annotraw")) annotationRaw_ = Upper(v) == "ON";
+    if (const char* v = GetDataFromSettings("autorwy")) autoRunway_ = Upper(v) != "OFF";
     if (const char* v = GetDataFromSettings("clearspeed")) {
         double s = std::atof(v);
         if (s > 0) clearSpeed_ = s;
@@ -99,6 +105,8 @@ void CTaxiRoutePlugin::SaveSettings() {
     std::snprintf(color, sizeof(color), "%d,%d,%d", GetRValue(color_), GetGValue(color_), GetBValue(color_));
     SaveDataToSettings("color", "ESTaxiRoute: cor", color);
     SaveDataToSettings("bars", "ESTaxiRoute: barras de parada", stopBars_ ? "ON" : "OFF");
+    SaveDataToSettings("annotraw", "ESTaxiRoute: anotacao sem prefixo (vSMR)", annotationRaw_ ? "ON" : "OFF");
+    SaveDataToSettings("autorwy", "ESTaxiRoute: pista do plano de voo", autoRunway_ ? "ON" : "OFF");
 }
 
 void CTaxiRoutePlugin::LoadDatabase(bool verbose) {
@@ -173,7 +181,11 @@ std::string CTaxiRoutePlugin::GetRoute(CFlightPlan fp) {
     if (annotationIndex_ >= 0) {
         // A route shared by another controller through the strip annotation.
         const char* a = fp.GetControllerAssignedData().GetFlightStripAnnotation(annotationIndex_);
-        if (a && std::string(a).compare(0, 3, kAnnotationPrefix) == 0 && a[3]) {
+        if (annotationRaw_ && a && *a) {
+            routes_[cs] = a;
+            return routes_[cs];
+        }
+        if (!annotationRaw_ && a && std::string(a).compare(0, 3, kAnnotationPrefix) == 0 && a[3]) {
             routes_[cs] = a + 3;
             return routes_[cs];
         }
@@ -193,10 +205,11 @@ void CTaxiRoutePlugin::SetRoute(CFlightPlan fp, const std::string& route) {
     if (annotationIndex_ >= 0) {
         CFlightPlanControllerAssignedData data = fp.GetControllerAssignedData();
         const char* cur = data.GetFlightStripAnnotation(annotationIndex_);
-        // Never overwrite an annotation that isn't ours.
-        bool ours = !cur || !*cur || std::string(cur).compare(0, 3, kAnnotationPrefix) == 0;
+        // Never overwrite an annotation that isn't ours. In raw (vSMR) mode the
+        // annotation is dedicated to the route.
+        bool ours = annotationRaw_ || !cur || !*cur || std::string(cur).compare(0, 3, kAnnotationPrefix) == 0;
         if (ours) {
-            std::string value = norm.empty() ? "" : kAnnotationPrefix + norm;
+            std::string value = norm.empty() || annotationRaw_ ? norm : kAnnotationPrefix + norm;
             data.SetFlightStripAnnotation(annotationIndex_, value.c_str());
         }
     }
@@ -216,6 +229,49 @@ void CTaxiRoutePlugin::SetRoute(CFlightPlan fp, const std::string& route) {
                 Message(cs + ": nao encontrado em " + apt->icao + ":" + list);
             }
         }
+    }
+}
+
+bool CTaxiRoutePlugin::ComputePath(CRadarTarget rt, CFlightPlan fp, taxi::PathResult& path,
+                                   const taxi::Airport** airport) {
+    if (!rt.IsValid()) return false;
+    std::string route = fp.IsValid() ? GetRoute(fp) : GetRoute(rt.GetCallsign());
+    if (route.empty()) return false;
+    CRadarTargetPositionData pd = rt.GetPosition();
+    if (!pd.IsValid()) return false;
+    CPosition pos = pd.GetPosition();
+    taxi::LatLon start{pos.m_Latitude, pos.m_Longitude};
+    const taxi::Airport* apt = Database().FindNearest(start, 10);
+    if (!apt) return false;
+
+    if (autoRunway_ && fp.IsValid() && Upper(fp.GetFlightPlanData().GetOrigin()) == apt->icao) {
+        const char* rwy = fp.GetFlightPlanData().GetDepartureRwy();
+        route = taxi::WithDefaultRunway(*apt, route, rwy ? rwy : "");
+    }
+    path = taxi::BuildPath(*apt, route, start, pd.GetReportedHeading(), stopBars_);
+    if (airport) *airport = apt;
+    return true;
+}
+
+void CTaxiRoutePlugin::ToggleStopBar(CFlightPlan fp, bool release, bool lock) {
+    taxi::PathResult path;
+    const taxi::Airport* apt = nullptr;
+    if (!ComputePath(fp.GetCorrelatedRadarTarget(), fp, path, &apt)) return;
+    std::string route = GetRoute(fp);
+    std::string cs = fp.GetCallsign();
+
+    // Release the bar the route is held at, unless it is the bar the route
+    // was told to hold at (the last element).
+    std::vector<std::string> tok = taxi::Tokenize(route);
+    bool heldByRoute = !tok.empty() && tok.back() == path.stopBar;
+    if (release && !path.stopBar.empty() && !heldByRoute) {
+        SetRoute(fp, taxi::ReleaseStopBar(*apt, route, path.stopBar));
+        Message(cs + ": " + path.stopBar + " liberada");
+    } else if (lock && taxi::HasReleasedStopBars(*apt, route)) {
+        SetRoute(fp, taxi::LockStopBars(*apt, route));
+        Message(cs + ": barras travadas");
+    } else if (release && heldByRoute) {
+        Message(cs + ": " + path.stopBar + " e o limite da rota; edite a rota para seguir alem dela");
     }
 }
 
@@ -247,6 +303,9 @@ void CTaxiRoutePlugin::OnFunctionCall(int FunctionId, const char* sItemString, P
             break;
         case TAG_FUNC_TAXI_CLEAR:
             SetRoute(fp, "");
+            break;
+        case TAG_FUNC_TAXI_STOPBAR:
+            ToggleStopBar(fp, true, true);
             break;
         case TAG_FUNC_TAXI_TOGGLE_DRAW: {
             std::string cs = fp.GetCallsign();
@@ -304,12 +363,28 @@ bool CTaxiRoutePlugin::OnCompileCommand(const char* sCommandLine) {
         int i = std::atoi(args[2].c_str());
         bool off = Upper(args[2]) == "OFF" || i < 0 || i > 8 || !std::isdigit(static_cast<unsigned char>(args[2][0]));
         annotationIndex_ = off ? -1 : i;
+        annotationRaw_ = false;
         SaveSettings();
         Message(off ? "compartilhamento por anotacao desligado"
                     : "rotas compartilhadas na anotacao " + std::to_string(i));
     } else if (cmd == "COLOR" && args.size() > 4) {
         color_ = RGB(std::atoi(args[2].c_str()), std::atoi(args[3].c_str()), std::atoi(args[4].c_str()));
         SaveSettings();
+    } else if (cmd == "VSMR" && args.size() > 2) {
+        bool on = Upper(args[2]) != "OFF";
+        annotationIndex_ = on ? 3 : -1;
+        annotationRaw_ = on;
+        SaveSettings();
+        Message(on ? "rotas gravadas na anotacao 3: use o item uk_stand no tag do vSMR"
+                   : "integracao com o vSMR desligada");
+    } else if (cmd == "AUTORWY" && args.size() > 2) {
+        autoRunway_ = Upper(args[2]) != "OFF";
+        SaveSettings();
+        Message(autoRunway_ ? "rotas terminadas em taxiway vao ate a pista do plano de voo"
+                            : "pista do plano de voo nao e usada");
+    } else if (cmd == "RELEASE" || cmd == "LOCK") {
+        CFlightPlan fp = FlightPlanSelectASEL();
+        if (fp.IsValid()) ToggleStopBar(fp, cmd == "RELEASE", cmd == "LOCK");
     } else if (cmd == "BARS" && args.size() > 2) {
         stopBars_ = Upper(args[2]) != "OFF";
         SaveSettings();

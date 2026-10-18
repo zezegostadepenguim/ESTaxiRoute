@@ -51,7 +51,6 @@ void CTaxiRouteScreen::DrawRoutes(HDC hDC) {
     CFlightPlan aselFp = plugin_->FlightPlanSelectASEL();
     if (aselFp.IsValid()) asel = aselFp.GetCallsign();
 
-    taxi::TaxiDatabase& db = plugin_->Database();
     HPEN thin = CreatePen(PS_SOLID, 2, plugin_->Color());
     HPEN thick = CreatePen(PS_SOLID, 3, plugin_->Color());
     HPEN bar = CreatePen(PS_SOLID, 4, kStopBarColor);
@@ -65,19 +64,9 @@ void CTaxiRouteScreen::DrawRoutes(HDC hDC) {
         if (mode == ShowMode::Asel && cs != asel) continue;
         if (plugin_->IsHidden(cs)) continue;
 
-        CFlightPlan fp = rt.GetCorrelatedFlightPlan();
-        std::string route = fp.IsValid() ? plugin_->GetRoute(fp) : plugin_->GetRoute(cs);
-        if (route.empty()) continue;
-
-        CRadarTargetPositionData pd = rt.GetPosition();
-        if (!pd.IsValid() || pd.GetReportedGS() > kMaxDrawSpeed) continue;
-        CPosition pos = pd.GetPosition();
-        taxi::LatLon start{pos.m_Latitude, pos.m_Longitude};
-        const taxi::Airport* apt = db.FindNearest(start, 10);
-        if (!apt) continue;
-
-        taxi::PathResult path =
-            taxi::BuildPath(*apt, route, start, pd.GetReportedHeading(), plugin_->StopBars());
+        if (rt.GetPosition().GetReportedGS() > kMaxDrawSpeed) continue;
+        taxi::PathResult path;
+        if (!plugin_->ComputePath(rt, rt.GetCorrelatedFlightPlan(), path)) continue;
         if (path.points.size() < 2) continue;
 
         std::vector<POINT> px;

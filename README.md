@@ -24,7 +24,8 @@ item:
 
 - **Item type:** `ESTaxiRoute / Taxi route`
 - **Left button:** `ESTaxiRoute / Edit taxi route`
-- (opcional) **Right button:** `ESTaxiRoute / Clear taxi route`
+- (opcional) **Right button:** `ESTaxiRoute / Release/lock stop bar` ou
+  `ESTaxiRoute / Clear taxi route`
 
 Também existe `Taxi route flag (TX)`, que mostra só `TX` quando há rota —
 útil em tags compactos.
@@ -37,6 +38,38 @@ Clique no **S** (settings) no canto da Departure List → **Add Item**:
 - **Width:** 15
 - **Tag item type:** `ESTaxiRoute / Taxi route`
 - **Mouse button left:** `ESTaxiRoute / Edit taxi route`
+
+### Colocar no tag do vSMR
+
+O vSMR só mostra os itens dele, não os de outros plugins. Mas o item
+**`uk_stand`** do vSMR mostra a **anotação 3 da flight strip**, então o
+ESTaxiRoute pode escrever a rota ali:
+
+1. No EuroScope, digite `.taxi vsmr on` (fica salvo).
+2. No `vSMR_Profiles.json`, acrescente `"uk_stand"` à definição do tag. Por
+   exemplo, uma terceira linha no tag de partida:
+
+```json
+"departure": {
+    "definition": [
+        ["callsign", "dest", "groundstatus"],
+        ["sctype", "asid", "deprwy"],
+        ["uk_stand"]
+    ],
+```
+
+3. Recarregue o perfil do vSMR (ou reinicie o EuroScope).
+
+Observações:
+- Sem rota, o vSMR mostra `NoGate` nesse item. Isso vem do próprio vSMR.
+- Clicar no item no tag do vSMR não abre o editor, porque o vSMR não repassa
+  esse clique. Edite pela Departure List, pelo tag do EuroScope ou com
+  `.taxi <rota>`.
+- A anotação 3 passa a ser só da rota. Não use junto com outro plugin que
+  grave nela (ex.: UK Controller Plugin). Como a anotação vai junto com a
+  strip, quem recebe a strip e também usa `.taxi vsmr on` vê a mesma rota.
+- Para o desenho aparecer na tela do vSMR, em **Plug-ins… → Allowed to draw
+  on types** libere o `ESTaxiRoute` também no tipo de display do vSMR.
 
 ## Uso
 
@@ -58,6 +91,17 @@ Como a rota é interpretada no desenho:
 
 O tag mostra até 15 caracteres (o limite do EuroScope); rotas maiores aparecem
 com `+` no fim, mas ficam salvas inteiras (veja abrindo o editor).
+
+**Pista do plano de voo:** se a rota termina numa taxiway (ex.: `H A G`) e o
+tráfego está no aeroporto de origem, o desenho vai até a pista de decolagem
+do plano de voo (a mesma do tag/lista), como se você tivesse digitado
+`H A G 10L`. O texto da rota não muda. Desligue com `.taxi autorwy off`.
+
+**Liberar barra com um clique:** a função `Release/lock stop bar` libera a
+barra onde a rota está parada (põe o nome dela no meio da rota). Clicando de
+novo quando não há barra para liberar, trava todas as barras liberadas. Pelo
+comando: `.taxi release` / `.taxi lock`. Uma barra no **fim** da rota é o
+limite que você deu e não é liberada pelo clique.
 
 A rota é apagada automaticamente quando o tráfego desconecta ou passa de
 80 kt (decolou). O desenho só aparece com a aeronave abaixo de 50 kt, a até
@@ -91,6 +135,9 @@ Digite na linha de comando do EuroScope:
 | `.taxi color 255 200 0` | cor do desenho |
 | `.taxi annot 7` / `off` | compartilha a rota com outros controladores (ver abaixo) |
 | `.taxi bars on` / `off` | rotas param / não param nas barras de parada |
+| `.taxi release` / `.taxi lock` | libera a barra onde a rota do ASEL está parada / trava todas |
+| `.taxi autorwy on` / `off` | completa rotas terminadas em taxiway com a pista do plano de voo |
+| `.taxi vsmr on` / `off` | grava a rota na anotação 3 para o item `uk_stand` do vSMR |
 | `.taxi debug` | mostra as taxiways, pontos e barras carregados (para conferir o arquivo) |
 | `.taxi reload` | recarrega `ESTaxiRoute.txt` |
 | `.taxi rec SBGR A` | começa a gravar a taxiway A clicando no radar |
@@ -99,7 +146,7 @@ Digite na linha de comando do EuroScope:
 | `.taxi undo` / `save` / `cancel` | desfaz o último clique / salva / cancela a gravação |
 | `.taxi help` | lista os comandos |
 
-`show`, `color`, `annot` e `bars` ficam salvos nas configurações do EuroScope.
+`show`, `color`, `annot`, `bars`, `autorwy` e `vsmr` ficam salvos nas configurações do EuroScope.
 
 ### Compartilhar a rota com outros controladores
 

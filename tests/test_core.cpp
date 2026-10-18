@@ -174,6 +174,28 @@ static void TestStopBars() {
     CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
 }
 
+static void TestRouteEditing() {
+    TaxiDatabase db = MakeDb();
+    const Airport* apt = db.Find("TEST");
+
+    CHECK(WithDefaultRunway(*apt, "a b", "27") == "A B 27");
+    CHECK(WithDefaultRunway(*apt, "A B HS", "27") == "A B HS 27");  // unknown tokens skipped
+    CHECK(WithDefaultRunway(*apt, "A B 09", "27") == "A B 09");
+    CHECK(WithDefaultRunway(*apt, "A B SB-B", "27") == "A B SB-B");
+    CHECK(WithDefaultRunway(*apt, "A C HP", "27") == "A C HP");
+    CHECK(WithDefaultRunway(*apt, "A B", "36") == "A B");  // not a runway here
+    CHECK(WithDefaultRunway(*apt, "A B", "") == "A B");
+
+    // A B 27 stops at SB-B; releasing puts the bar before the runway.
+    CHECK(ReleaseStopBar(*apt, "A B 27", "SB-B") == "A B SB-B 27");
+    CHECK(BuildPath(*apt, ReleaseStopBar(*apt, "A B 27", "SB-B"), {0, 0.001}, 90).stopBar.empty());
+    CHECK(ReleaseStopBar(*apt, "A B SB-B 27", "SB-B") == "A B SB-B 27");  // already released
+    CHECK(HasReleasedStopBars(*apt, "A B SB-B 27"));
+    CHECK(!HasReleasedStopBars(*apt, "A B SB-B"));  // trailing bar = hold there
+    CHECK(LockStopBars(*apt, "A B SB-B 27") == "A B 27");
+    CHECK(LockStopBars(*apt, "A B SB-B") == "A B SB-B");
+}
+
 int main() {
     TestNormalize();
     TestCoords();
@@ -184,6 +206,7 @@ int main() {
     TestRunwayCrossing();
     TestRunwayEnd();
     TestStopBars();
+    TestRouteEditing();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

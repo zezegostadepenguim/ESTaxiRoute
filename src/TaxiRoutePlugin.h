@@ -21,6 +21,7 @@ const int TAG_ITEM_TAXI_FLAG = 2;
 const int TAG_FUNC_TAXI_EDIT = 1;
 const int TAG_FUNC_TAXI_CLEAR = 2;
 const int TAG_FUNC_TAXI_TOGGLE_DRAW = 3;
+const int TAG_FUNC_TAXI_STOPBAR = 4;
 const int TAG_FUNC_TAXI_EDIT_DONE = 100;  // popup callback, not registered
 
 enum class ShowMode { Off, Asel, All };
@@ -55,6 +56,9 @@ public:
     std::string GetRoute(const std::string& callsign);
     void SetRoute(EuroScopePlugIn::CFlightPlan fp, const std::string& route);
     bool IsHidden(const std::string& callsign) const { return hidden_.count(callsign) > 0; }
+    // Path to draw for an aircraft (route + flight plan runway when enabled).
+    bool ComputePath(EuroScopePlugIn::CRadarTarget rt, EuroScopePlugIn::CFlightPlan fp, taxi::PathResult& path,
+                     const taxi::Airport** airport = nullptr);
 
     // Data used by the radar screens
     taxi::TaxiDatabase& Database();
@@ -72,6 +76,7 @@ private:
     void LoadRunways();
     void Message(const std::string& msg);
     bool FinishRecording();
+    void ToggleStopBar(EuroScopePlugIn::CFlightPlan fp, bool release, bool lock);
     std::string ConfigPath() const;
 
     std::map<std::string, std::string> routes_;  // callsign -> route
@@ -82,6 +87,8 @@ private:
     bool debug_ = false;
     bool stopBars_ = true;  // routes stop at stop bars they don't name
     int annotationIndex_ = -1;  // flight strip annotation used to share routes, -1 = off
+    bool annotationRaw_ = false;  // write the bare route (vSMR shows annotation 3 as uk_stand)
+    bool autoRunway_ = true;      // complete routes ending on a taxiway with the FP runway
     double clearSpeed_ = 80.0;  // routes are cleared when the aircraft goes faster (takeoff)
     COLORREF color_ = RGB(255, 200, 0);
     Recording rec_;
