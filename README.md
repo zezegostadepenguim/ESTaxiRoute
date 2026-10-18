@@ -49,7 +49,7 @@ Como a rota é interpretada no desenho:
 | Token | Significado |
 |---|---|
 | Nome de taxiway (`A`, `B1`…) | segue por essa taxiway até cruzar com a próxima |
-| Pista (`27L`, `09`, `RWY27L`) no **fim** | para ~70 m antes do eixo da pista (holding) |
+| Pista (`10L`, `09`, `RWY27L`) no **fim** | termina no lado da cabeceira informada: se a taxiway cruza a pista, para ~70 m antes do eixo no cruzamento mais perto dessa cabeceira; se é paralela (ex.: `A 10L`), vai até o ponto da taxiway mais perto da cabeceira |
 | Pista no **meio** (`A 09 B`) | cruzamento de pista, o desenho continua |
 | Ponto (`POINT` do arquivo, ex.: `H1`, stand) | vai até o ponto |
 | Qualquer outra coisa (`HS`, `VIA`…) | aparece no tag, ignorado no desenho |

@@ -28,7 +28,8 @@ struct Airport {
     std::map<std::string, LatLon> points;  // holding points, stands, ...
     std::vector<Runway> runways;
 
-    bool HasRunway(const std::string& name, Runway* out = nullptr) const;
+    // `threshold` receives the threshold of the named end ("10L" -> start of 10L).
+    bool HasRunway(const std::string& name, Runway* out = nullptr, LatLon* threshold = nullptr) const;
     bool Reference(LatLon& ref) const;  // any point of the airport, for projection
 };
 

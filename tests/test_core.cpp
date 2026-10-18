@@ -26,6 +26,10 @@ TWY A 0 0  0 0.01
 TWY B -0.005 0.005  0.005 0.005
 TWY C 0 0.009  0.005 0.009
 POINT HP 0.003 0.009
+; parallel to the runway, a bit closer to it at the 27 end
+TWY D 0.003 0.0  0.0031 0.01
+; U shape crossing the runway near both ends
+TWY F 0.003 0.001  0.005 0.001  0.005 0.009  0.003 0.009
 )";
 
 static TaxiDatabase MakeDb() {
@@ -115,6 +119,26 @@ static void TestRunwayCrossing() {
     CHECK(apt->HasRunway("RWY9") && apt->HasRunway("27") && !apt->HasRunway("18"));
 }
 
+static void TestRunwayEnd() {
+    TaxiDatabase db = MakeDb();
+    const Airport* apt = db.Find("TEST");
+    // Parallel taxiway: stop next to the threshold of the runway asked for.
+    PathResult r = BuildPath(*apt, "D 09", {0.003, 0.008}, 90);
+    CHECK(Near(r.points.back().lon, 0.0));
+    r = BuildPath(*apt, "D 27", {0.003, 0.002}, 270);
+    CHECK(Near(r.points.back().lon, 0.01));
+    r = BuildPath(*apt, "D 9", {0.003, 0.002}, 90);
+    CHECK(Near(r.points.back().lon, 0.0));
+
+    // Taxiway crossing the runway twice: hold short at the crossing near the 27 end.
+    r = BuildPath(*apt, "F 27", {0.003, 0.001}, 0);
+    CHECK(Near(r.points.back().lon, 0.009));
+    CHECK(Near(r.points.back().lat, 0.004 + 70.0 / 110540.0, 1e-6));
+    r = BuildPath(*apt, "F 09", {0.003, 0.001}, 0);
+    CHECK(Near(r.points.back().lon, 0.001));
+    CHECK(Near(r.points.back().lat, 0.004 - 70.0 / 110540.0, 1e-6));
+}
+
 int main() {
     TestNormalize();
     TestCoords();
@@ -123,6 +147,7 @@ int main() {
     TestRouteNoTarget();
     TestRouteToPointAndUnknown();
     TestRunwayCrossing();
+    TestRunwayEnd();
     if (failures) {
         std::printf("%d failure(s)\n", failures);
         return 1;

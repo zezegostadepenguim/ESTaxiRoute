@@ -204,11 +204,13 @@ struct Element {
 
 // ---- Airport / database ----------------------------------------------------
 
-bool Airport::HasRunway(const std::string& name, Runway* out) const {
+bool Airport::HasRunway(const std::string& name, Runway* out, LatLon* threshold) const {
     std::string want = CanonicalRunway(name);
     for (const Runway& r : runways) {
-        if (CanonicalRunway(r.name1) == want || CanonicalRunway(r.name2) == want) {
+        bool first = CanonicalRunway(r.name1) == want;
+        if (first || CanonicalRunway(r.name2) == want) {
             if (out) *out = r;
+            if (threshold) *threshold = first ? r.thr1 : r.thr2;
             return true;
         }
     }
@@ -447,8 +449,9 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
             continue;
         }
         Runway rwy;
-        if (apt.HasRunway(tok, &rwy)) {
-            Element e{Kind::Runway, {}, {}};
+        LatLon thr;
+        if (apt.HasRunway(tok, &rwy, &thr)) {
+            Element e{Kind::Runway, {}, proj.To(thr)};  // pt = threshold of the named end
             e.lines.push_back(MakeLine({rwy.thr1, rwy.thr2}, proj));
             elems.push_back(e);
             continue;
@@ -509,12 +512,18 @@ PathResult BuildPath(const Airport& apt, const std::string& route, const LatLon&
         } else if (next && next->kind == Kind::Point) {
             exitS = ProjectPoint(*line, next->pt).s;
         } else if (runwayTarget) {
+            // Hold at the end of the runway that was asked for: "A 10L" goes to the
+            // 10L threshold side even when A is parallel to the runway.
             const Line& rl = runwayTarget->lines.front();
+            V thr = runwayTarget->pt;
             std::vector<Hit> hits = Crossings(*line, rl);
             if (hits.empty()) {
-                exitS = ClosestApproach(*line, rl).s;
+                exitS = ProjectPoint(*line, thr).s;
             } else {
-                double s = NearestAlong(hits, entry.s)->s;
+                const Hit* best = &hits.front();
+                for (const Hit& h : hits)
+                    if (Len(h.p - thr) < Len(best->p - thr)) best = &h;
+                double s = best->s;
                 exitS = s >= entry.s ? std::max(entry.s, s - kHoldShortMeters)
                                      : std::min(entry.s, s + kHoldShortMeters);
             }
